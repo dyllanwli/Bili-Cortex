@@ -93,7 +93,7 @@ class TestBiliCortexProcessor(unittest.TestCase):
         self.assertEqual(len(valid_urls), 1)
         self.assertIn("https://www.bilibili.com/video/BV1234567890", valid_urls)
     
-    async def test_process_urls_success(self):
+    def test_process_urls_success(self):
         """测试处理 URL 成功"""
         urls = ["https://www.bilibili.com/video/BV1234567890"]
         
@@ -121,7 +121,7 @@ class TestBiliCortexProcessor(unittest.TestCase):
         self.mock_transcriber.estimate_processing_time.return_value = 10.0
         
         # 执行处理
-        results = await self.processor.process_urls(urls)
+        results = asyncio.run(self.processor.process_urls(urls))
         
         # 验证结果
         self.assertEqual(len(results), 1)
@@ -131,7 +131,7 @@ class TestBiliCortexProcessor(unittest.TestCase):
         self.mock_extractor.extract_audio.assert_called_once_with(urls[0])
         self.mock_transcriber.batch_transcribe.assert_called_once_with([audio_file])
     
-    async def test_process_urls_batch(self):
+    def test_process_urls_batch(self):
         """测试批量处理 URL"""
         urls = [
             "https://www.bilibili.com/video/BV1234567890",
@@ -157,13 +157,16 @@ class TestBiliCortexProcessor(unittest.TestCase):
             ) for i, audio_file in enumerate(audio_files)
         ]
         
-        # 设置模拟返回值
-        self.mock_extractor.batch_extract.return_value = audio_files
+        # 设置模拟返回值 (batch_extract 是异步方法)
+        async def mock_batch_extract(urls):
+            return audio_files
+        
+        self.mock_extractor.batch_extract = mock_batch_extract
         self.mock_transcriber.batch_transcribe.return_value = transcripts
         self.mock_transcriber.estimate_processing_time.return_value = 20.0
         
         # 执行处理
-        results = await self.processor.process_urls(urls)
+        results = asyncio.run(self.processor.process_urls(urls))
         
         # 验证结果
         self.assertEqual(len(results), 2)
@@ -173,11 +176,11 @@ class TestBiliCortexProcessor(unittest.TestCase):
         self.mock_extractor.batch_extract.assert_called_once_with(urls)
         self.mock_transcriber.batch_transcribe.assert_called_once_with(audio_files)
     
-    async def test_process_urls_no_valid_urls(self):
+    def test_process_urls_no_valid_urls(self):
         """测试没有有效 URL 的情况"""
         invalid_urls = ["https://youtube.com/watch?v=123"]
         
-        results = await self.processor.process_urls(invalid_urls)
+        results = asyncio.run(self.processor.process_urls(invalid_urls))
         
         self.assertEqual(len(results), 0)
         # 不应该调用提取器和转录器
@@ -185,20 +188,21 @@ class TestBiliCortexProcessor(unittest.TestCase):
         self.mock_extractor.batch_extract.assert_not_called()
         self.mock_transcriber.batch_transcribe.assert_not_called()
     
-    async def test_process_urls_extraction_failure(self):
+    def test_process_urls_extraction_failure(self):
         """测试音频提取失败"""
         urls = ["https://www.bilibili.com/video/BV1234567890"]
         
         # 设置提取器返回空列表
         self.mock_extractor.extract_audio.return_value = []
+        self.mock_transcriber.estimate_processing_time.return_value = 0.0
         
-        results = await self.processor.process_urls(urls)
+        results = asyncio.run(self.processor.process_urls(urls))
         
         self.assertEqual(len(results), 0)
         # 转录器不应该被调用
         self.mock_transcriber.batch_transcribe.assert_not_called()
     
-    async def test_save_transcripts(self):
+    def test_save_transcripts(self):
         """测试保存转录结果"""
         # 创建转录结果
         audio_file = AudioFile(
@@ -216,7 +220,7 @@ class TestBiliCortexProcessor(unittest.TestCase):
         # 模拟保存方法
         self.mock_transcriber.save_transcript = MagicMock()
         
-        await self.processor._save_transcripts([transcript])
+        asyncio.run(self.processor._save_transcripts([transcript]))
         
         # 验证保存方法被调用
         self.mock_transcriber.save_transcript.assert_called_once()

@@ -2,6 +2,8 @@
 .bmad-core 
 .claude
 docs/
+data/
+logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

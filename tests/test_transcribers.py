@@ -30,8 +30,9 @@ class TestWhisperTranscriber(unittest.TestCase):
         """测试前设置"""
         self.temp_dir = tempfile.mkdtemp()
         
-        # 使用较小的模型进行测试
-        with patch('faster_whisper.WhisperModel'):
+        # 模拟 WhisperModel 以避免真实模型加载
+        self.mock_model = MagicMock()
+        with patch('faster_whisper.WhisperModel', return_value=self.mock_model):
             self.transcriber = WhisperTranscriber(
                 model_name="tiny",
                 language="zh",

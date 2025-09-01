@@ -1,0 +1,7 @@
+# Bili-Cortex 示例 URL 文件
+# 请替换为实际的 Bilibili 视频链接
+
+https://www.bilibili.com/video/BV1XEvNzMEG9/?spm_id_from=333.337.search-card.all.click
+
+# 注释行会被自动忽略
+# 每行一个 URL，支持多种 B站 URL 格式

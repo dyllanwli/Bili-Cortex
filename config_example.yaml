@@ -1,0 +1,25 @@
+# Bili-Cortex 配置文件示例
+# 复制此文件为 config.yaml 并修改相应设置
+
+audio:
+  quality: 'best'          # 音频质量: best, worst
+  format: 'wav'            # 音频格式: wav, mp3, flac
+  temp_dir: './data/temp'  # 临时目录
+
+transcription:
+  model: 'medium'          # 模型大小: tiny, base, small, medium, large, large-v2, large-v3
+  language: 'zh'           # 语言代码: zh, en, ja, ko, fr, de, es 等
+  device: 'auto'           # 设备: auto, cpu, cuda
+  batch_size: 8            # 批处理大小
+  compute_type: 'float32'  # 计算精度: float16, float32, int8
+
+system:
+  log_level: 'INFO'                  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  max_concurrent_downloads: 3        # 最大并发下载数
+  max_file_size_mb: 500             # 最大文件大小限制(MB)
+  max_duration_minutes: 120         # 最大音频时长限制(分钟)
+  cleanup_temp_files: true          # 是否自动清理临时文件
+  data_dir: './data'                # 数据目录
+  audio_dir: './data/audio'         # 音频文件目录
+  transcripts_dir: './data/transcripts'  # 转录结果目录
+  temp_dir: './data/temp'           # 临时文件目录
