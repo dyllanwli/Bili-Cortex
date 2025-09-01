@@ -72,12 +72,3 @@ def convert_text(text: str, target_format: str = 'simplified') -> str:
         return text_converter.to_simplified(text)
 
 
-# 兼容之前的函数名
-def convert_traditional_to_simplified(text: str) -> str:
-    """繁体转简体（兼容函数）"""
-    return text_converter.to_simplified(text)
-
-
-def convert_simplified_to_traditional(text: str) -> str:
-    """简体转繁体（兼容函数）"""
-    return text_converter.to_traditional(text)

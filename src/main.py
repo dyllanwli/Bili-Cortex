@@ -76,10 +76,13 @@ class BiliCortexProcessor:
     
     def validate_urls(self, urls: List[str]) -> List[str]:
         """简化的 URL 验证"""
-        from config.settings import get_allowed_domains
-        
         valid_urls = []
-        allowed_domains = get_allowed_domains()
+        allowed_domains = [
+            'bilibili.com',
+            'www.bilibili.com', 
+            'b23.tv',
+            'm.bilibili.com'
+        ]
         
         for url in urls:
             # 基本的域名检查

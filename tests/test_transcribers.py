@@ -36,8 +36,7 @@ class TestWhisperTranscriber(unittest.TestCase):
             self.transcriber = WhisperTranscriber(
                 model_name="tiny",
                 language="zh",
-                device="cpu",
-                batch_size=2
+                device="cpu"
             )
     
     def tearDown(self):

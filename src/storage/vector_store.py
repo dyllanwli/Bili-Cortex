@@ -3,7 +3,6 @@ from typing import List, Optional, Dict, Any
 from pathlib import Path
 import uuid
 import chromadb
-from chromadb.config import Settings
 
 from ..models import TextChunk, SearchResult, Collection, EmbeddingVector
 
@@ -36,14 +35,8 @@ class VectorStore:
             try:
                 logger.info(f"Initializing ChromaDB client at {self.db_path}")
                 
-                # 配置 ChromaDB 设置
-                settings = Settings(
-                    persist_directory=str(self.db_path),
-                    chroma_db_impl="duckdb+parquet",  # 使用持久化存储
-                    anonymized_telemetry=False
-                )
-                
-                self.client = chromadb.Client(settings)
+                # 使用新的 ChromaDB 客户端配置
+                self.client = chromadb.PersistentClient(path=str(self.db_path))
                 logger.info("ChromaDB client initialized successfully")
                 
             except Exception as e:
@@ -176,14 +169,6 @@ class VectorStore:
             logger.error(f"Failed to add items to collection {collection_name}: {str(e)}")
             raise
     
-    # 保留兼容性方法
-    def add_documents(self, chunks, collection_name: str = None) -> None:
-        """兼容性方法 - 使用统一接口"""
-        self.add_items(chunks, collection_name)
-    
-    def add_embedding_vectors(self, embedding_vectors, collection_name: str = None) -> None:
-        """兼容性方法 - 使用统一接口"""
-        self.add_items(embedding_vectors, collection_name)
     
     def similarity_search(self, query: str, k: int = 5, 
                          collection_name: str = None) -> List[SearchResult]:

@@ -133,8 +133,8 @@ class TestVectorStore(unittest.TestCase):
         mock_client.create_collection.assert_not_called()
     
     @patch('src.storage.vector_store.chromadb.Client')
-    def test_add_documents(self, mock_client_class):
-        """测试添加文档"""
+    def test_add_items_with_text_chunks(self, mock_client_class):
+        """测试添加文本块"""
         # 设置模拟客户端和集合
         mock_client = Mock()
         mock_collection = Mock()
@@ -145,7 +145,7 @@ class TestVectorStore(unittest.TestCase):
         mock_client_class.return_value = mock_client
         
         # 添加文档
-        self.store.add_documents(self.test_chunks, "test_collection")
+        self.store.add_items(self.test_chunks, "test_collection")
         
         # 验证集合创建和文档添加
         mock_client.create_collection.assert_called_once()
@@ -164,7 +164,7 @@ class TestVectorStore(unittest.TestCase):
         self.assertIn("深度学习", documents[1])
     
     @patch('src.storage.vector_store.chromadb.Client')
-    def test_add_embedding_vectors(self, mock_client_class):
+    def test_add_items_with_vectors(self, mock_client_class):
         """测试添加嵌入向量"""
         # 设置模拟客户端和集合
         mock_client = Mock()
@@ -176,7 +176,7 @@ class TestVectorStore(unittest.TestCase):
         mock_client_class.return_value = mock_client
         
         # 添加嵌入向量
-        self.store.add_embedding_vectors(self.test_vectors, "test_collection")
+        self.store.add_items(self.test_vectors, "test_collection")
         
         # 验证集合创建和向量添加
         mock_client.create_collection.assert_called_once()
@@ -328,16 +328,16 @@ class TestVectorStore(unittest.TestCase):
         self.assertEqual(stats['document_count'], 25)
         self.assertEqual(stats['db_path'], self.temp_dir)
     
-    def test_add_documents_empty_list(self):
-        """测试添加空文档列表"""
+    def test_add_items_empty_list(self):
+        """测试添加空项目列表"""
         # 这应该不会引起错误，直接返回
-        self.store.add_documents([])
+        self.store.add_items([])
         # 如果没有异常，测试通过
     
-    def test_add_embedding_vectors_empty_list(self):
+    def test_add_items_vectors_empty_list(self):
         """测试添加空向量列表"""
         # 这应该不会引起错误，直接返回
-        self.store.add_embedding_vectors([])
+        self.store.add_items([])
         # 如果没有异常，测试通过
 
 
@@ -408,10 +408,10 @@ class TestVectorStoreIntegration(unittest.TestCase):
         self.assertIsInstance(collection, Collection)
         
         # 2. 添加文档
-        self.store.add_documents(chunks, "ai_content")
+        self.store.add_items(chunks, "ai_content")
         
         # 3. 添加向量
-        self.store.add_embedding_vectors(vectors, "ai_content")
+        self.store.add_items(vectors, "ai_content")
         
         # 4. 执行搜索
         results = self.store.similarity_search("人工智能相关内容", k=3, collection_name="ai_content")

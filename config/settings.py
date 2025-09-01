@@ -123,27 +123,36 @@ class Settings:
             with open(config_file, 'r', encoding='utf-8') as f:
                 config_data = yaml.safe_load(f)
             
-            # 更新核心配置
-            for section in ['audio', 'transcription', 'system']:
-                if section in config_data:
-                    section_config = config_data[section]
-                    for key, value in section_config.items():
-                        if hasattr(self.core, key):
-                            setattr(self.core, key, value)
+            # 直接映射配置到对应的配置类
+            config_mapping = {
+                # 核心配置映射
+                'audio': self.core,
+                'transcription': self.core, 
+                'system': self.core,
+                # 知识库配置映射
+                'text_processing': self.knowledge_base,
+                'vectorization': self.knowledge_base,
+                'storage': self.knowledge_base
+            }
             
-            # 更新知识库配置
-            for section in ['text_processing', 'vectorization', 'storage']:
+            # 字段名映射
+            field_mapping = {
+                'vectorization': {
+                    'model': 'embedding_model',
+                    'device': 'embedding_device'
+                }
+            }
+            
+            for section, target_config in config_mapping.items():
                 if section in config_data:
                     section_config = config_data[section]
                     for key, value in section_config.items():
-                        # 映射字段名
-                        if section == 'vectorization' and key == 'model':
-                            key = 'embedding_model'
-                        elif section == 'vectorization' and key == 'device':
-                            key = 'embedding_device'
+                        # 应用字段名映射
+                        if section in field_mapping and key in field_mapping[section]:
+                            key = field_mapping[section][key]
                         
-                        if hasattr(self.knowledge_base, key):
-                            setattr(self.knowledge_base, key, value)
+                        if hasattr(target_config, key):
+                            setattr(target_config, key, value)
                         
         except ImportError:
             print("Warning: PyYAML not installed, skipping YAML config file")
@@ -230,12 +239,3 @@ def reload_settings(config_file: Optional[str] = None) -> Settings:
     return settings
 
 
-# 兼容性函数 - 保持向后兼容
-def get_allowed_domains():
-    """获取允许的域名列表"""
-    return [
-        'bilibili.com',
-        'www.bilibili.com', 
-        'b23.tv',
-        'm.bilibili.com'
-    ]

@@ -15,8 +15,7 @@ class TestTextProcessor(unittest.TestCase):
         """测试前准备"""
         self.processor = TextProcessor(
             chunk_size=100,  # 使用较小的块大小便于测试
-            chunk_overlap=20,
-            min_chunk_size=30
+            chunk_overlap=20
         )
         
         # 创建模拟的音频文件
@@ -190,7 +189,7 @@ class TestTextProcessorIntegration(unittest.TestCase):
     
     def test_full_processing_pipeline(self):
         """测试完整的处理流程"""
-        processor = TextProcessor(chunk_size=200, chunk_overlap=50, min_chunk_size=50)
+        processor = TextProcessor(chunk_size=200, chunk_overlap=50)
         
         # 创建较长的转录内容用于测试
         long_segments = [
