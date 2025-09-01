@@ -31,8 +31,14 @@
 # 转录单个YouTube视频
 ./bili-cortex.sh https://www.youtube.com/watch?v=example123
 
-# 转录多个视频（混合平台）
-./bili-cortex.sh bilibili_url youtube_url
+# 转录YouTube频道（默认10个视频）
+./bili-cortex.sh https://www.youtube.com/channel/UC1234567890
+
+# 限制频道视频数量
+./bili-cortex.sh --channel-limit 3 https://www.youtube.com/channel/UC1234567890
+
+# 混合处理（视频+频道）
+./bili-cortex.sh bilibili_url youtube_channel_url
 
 # 从文件批量转录
 ./bili-cortex.sh --from-file urls.txt
@@ -60,9 +66,13 @@ https://www.bilibili.com/video/BV1234567890
 https://www.bilibili.com/video/BV1234567891
 https://b23.tv/abc123
 
-# YouTube URLs
+# YouTube 单视频 URLs
 https://www.youtube.com/watch?v=example123
 https://youtu.be/shortExample
+
+# YouTube 频道 URLs (默认10个视频)
+https://www.youtube.com/channel/UC1234567890
+https://www.youtube.com/@channel_name
 
 # 注释行会被忽略
 ```
@@ -73,6 +83,7 @@ https://youtu.be/shortExample
 | 选项 | 说明 | 示例 |
 |------|------|------|
 | `--from-file, -f` | 从文件读取 URL 列表 | `-f urls.txt` |
+| `--channel-limit` | 频道视频数量限制 | `--channel-limit 5` |
 | `--no-save` | 不保存转录文件 | `--no-save` |
 | `--no-kb` | 不构建向量知识库 | `--no-kb` |
 | `--log-level` | 设置日志级别 | `--log-level DEBUG` |
@@ -153,6 +164,7 @@ data/transcripts/transcript_20250901_143022_a1b2c3d4.md
 - ✅ **www.youtube.com** - WWW子域名
 - ✅ **youtu.be** - 短链接格式
 - ✅ **m.youtube.com** - 移动版链接
+- ✅ **频道批量处理** - `/channel/`, `/c/`, `/@`, `/user/` 格式
 
 ## 💻 系统要求
 

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 
+import yt_dlp
 from config.settings import get_settings
 from src.extractors.video_extractor import VideoExtractor
 from src.transcribers.whisper_transcriber import WhisperTranscriber
@@ -74,8 +75,62 @@ class BiliCortexProcessor:
         self.logger.info("Bili-Cortex processor initialized")
         self.logger.info(f"Configuration: {self.settings.to_dict()}")
     
-    def validate_urls(self, urls: List[str]) -> List[str]:
-        """简化的 URL 验证"""
+    def is_channel_url(self, url: str) -> bool:
+        """检测是否为频道URL"""
+        channel_patterns = [
+            '/channel/',
+            '/c/',
+            '/@',
+            '/user/',
+            'space.bilibili.com/'
+        ]
+        return any(pattern in url.lower() for pattern in channel_patterns)
+    
+    def extract_channel_videos(self, channel_url: str, limit: int = 10) -> List[str]:
+        """从频道提取视频URLs (简化版)"""
+        try:
+            self.logger.info(f"Extracting videos from channel: {channel_url} (limit: {limit})")
+            
+            # 使用频道视频列表URL
+            if '/channel/' in channel_url:
+                videos_url = channel_url + '/videos'
+            elif '/@' in channel_url or '/user/' in channel_url:
+                videos_url = channel_url + '/videos'
+            else:
+                videos_url = channel_url
+            
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': True,  # 只获取URL，不下载
+                'playlistend': limit,  # 限制视频数量
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(videos_url, download=False)
+                
+                if not info or 'entries' not in info:
+                    self.logger.warning(f"No videos found in channel: {channel_url}")
+                    return []
+                
+                video_urls = []
+                for entry in info['entries']:
+                    if entry and len(video_urls) < limit:
+                        video_id = entry.get('id')
+                        # 确保获取的是正确的视频ID
+                        if video_id and video_id != channel_url.split('/')[-1]:
+                            video_urls.append(f"https://www.youtube.com/watch?v={video_id}")
+                            self.logger.debug(f"Added video: {video_id}")
+                
+                self.logger.info(f"Extracted {len(video_urls)} video URLs from channel")
+                return video_urls
+                
+        except Exception as e:
+            self.logger.error(f"Failed to extract channel videos: {e}")
+            return []
+    
+    def validate_urls(self, urls: List[str], channel_limit: int = 10) -> List[str]:
+        """简化的 URL 验证，支持频道扩展"""
         valid_urls = []
         allowed_domains = [
             'bilibili.com',
@@ -91,19 +146,28 @@ class BiliCortexProcessor:
         for url in urls:
             # 基本的域名检查
             if any(domain in url.lower() for domain in allowed_domains):
-                valid_urls.append(url)
+                # 检查是否为频道URL
+                if self.is_channel_url(url):
+                    self.logger.info(f"Channel URL detected: {url}")
+                    channel_videos = self.extract_channel_videos(url, channel_limit)
+                    if channel_videos:
+                        valid_urls.extend(channel_videos)
+                    else:
+                        self.logger.warning(f"No videos extracted from channel: {url}")
+                else:
+                    valid_urls.append(url)
             else:
                 self.logger.warning(f"Unsupported domain, skipping: {url}")
         
         return valid_urls
     
     async def process_urls(self, urls: List[str], save_transcripts: bool = True,
-                          build_knowledge_base: bool = True) -> List[Transcript]:
+                          build_knowledge_base: bool = True, channel_limit: int = 10) -> List[Transcript]:
         """处理 URL 列表的完整流程"""
         self.logger.info(f"Starting processing of {len(urls)} URLs")
         
         # 验证 URLs
-        valid_urls = self.validate_urls(urls)
+        valid_urls = self.validate_urls(urls, channel_limit)
         if not valid_urls:
             self.logger.error("No valid URLs to process")
             return []
@@ -256,10 +320,11 @@ class BiliCortexProcessor:
             
         self.logger.info("=== 搜索演示完成 ===")
     
-    def process_single_url(self, url: str) -> Optional[Transcript]:
+    def process_single_url(self, url: str, channel_limit: int = 10) -> Optional[Transcript]:
         """处理单个 URL（同步接口）"""
         try:
-            return asyncio.run(self.process_urls([url]))[0]
+            results = asyncio.run(self.process_urls([url], channel_limit=channel_limit))
+            return results[0] if results else None
         except (IndexError, Exception):
             return None
     
@@ -287,14 +352,14 @@ Examples:
   # 处理单个视频
   python src/main.py https://www.bilibili.com/video/BV1234567890
   
-  # 处理多个视频
-  python src/main.py url1 url2 url3
+  # 处理YouTube频道（默认10个视频）
+  python src/main.py https://www.youtube.com/channel/UC1234567890
+  
+  # 处理频道并限制视频数量
+  python src/main.py --channel-limit 5 https://www.youtube.com/channel/UC1234567890
   
   # 从文件读取 URL 列表
   python src/main.py --from-file urls.txt
-  
-  # 不保存转录文件（仅处理）
-  python src/main.py --no-save https://www.bilibili.com/video/BV1234567890
         """
     )
     
@@ -345,6 +410,13 @@ Examples:
         '--info',
         action='store_true',
         help='显示系统信息'
+    )
+    
+    parser.add_argument(
+        '--channel-limit',
+        type=int,
+        default=10,
+        help='频道视频数量限制 (default: 10)'
     )
     
     return parser.parse_args()
@@ -425,7 +497,8 @@ async def main():
         transcripts = await processor.process_urls(
             urls, 
             save_transcripts=not args.no_save,
-            build_knowledge_base=not args.no_kb
+            build_knowledge_base=not args.no_kb,
+            channel_limit=args.channel_limit
         )
         
         if transcripts:
