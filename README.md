@@ -46,6 +46,48 @@ https://b23.tv/abc123
 | `--info` | 显示系统信息 | `--info` |
 | `--help, -h` | 显示帮助信息 | `--help` |
 
+## 语言设置
+
+### 支持的语言格式
+- `zh-CN`: 简体中文（自动转换为简体）
+- `zh-TW`: 繁体中文（自动转换为繁体）
+- `zh`: 简体中文（默认）
+- `en`: 英语
+- `ja`: 日语
+- `ko`: 韩语
+
+### 设置简体中文（推荐）
+```bash
+# 方法1: 环境变量
+export WHISPER_LANGUAGE="zh-CN"
+./bili-cortex.sh <url>
+
+# 方法2: 配置文件
+cp config_example.yaml config.yaml
+# 编辑 config.yaml 中的 language 设置为 'zh-CN'
+```
+
+### 设置繁体中文
+```bash
+# 环境变量
+export WHISPER_LANGUAGE="zh-TW" 
+./bili-cortex.sh <url>
+
+# 配置文件：language: 'zh-TW'
+```
+
+### 手动繁简转换
+```bash
+# 繁体转简体
+python tools/convert_text.py --to-simplified input.md output.md
+
+# 简体转繁体  
+python tools/convert_text.py --to-traditional input.md output.md
+
+# 批量转换
+python tools/convert_text.py --to-simplified data/transcripts/ converted/
+```
+
 ## 输出文件
 
 转录结果保存在 `data/transcripts/` 目录下：

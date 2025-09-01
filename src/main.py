@@ -15,7 +15,10 @@ from datetime import datetime
 from config.settings import get_settings
 from src.extractors.video_extractor import VideoExtractor
 from src.transcribers.whisper_transcriber import WhisperTranscriber
-from src.models import AudioFile, Transcript
+from src.processors.text_processor import TextProcessor
+from src.vectorizers.embedding_vectorizer import EmbeddingVectorizer
+from src.storage.vector_store import VectorStore
+from src.models import AudioFile, Transcript, TextChunk, SearchResult
 
 
 def setup_logging(log_level: str = "INFO") -> None:
@@ -52,6 +55,24 @@ class BiliCortexProcessor:
             **self.settings.get_whisper_opts()
         )
         
+        # 初始化知识库组件
+        self.text_processor = TextProcessor(
+            chunk_size=self.settings.text_processing.chunk_size,
+            chunk_overlap=self.settings.text_processing.chunk_overlap,
+            min_chunk_size=self.settings.text_processing.min_chunk_size
+        )
+        
+        self.vectorizer = EmbeddingVectorizer(
+            model_name=self.settings.vectorization.model,
+            batch_size=self.settings.vectorization.batch_size,
+            max_seq_length=self.settings.vectorization.max_seq_length
+        )
+        
+        self.vector_store = VectorStore(
+            db_path=self.settings.storage.db_path,
+            collection_name=self.settings.storage.collection_name
+        )
+        
         self.logger.info("Bili-Cortex processor initialized")
         self.logger.info(f"Configuration: {self.settings.to_dict()}")
     
@@ -73,7 +94,8 @@ class BiliCortexProcessor:
         
         return valid_urls
     
-    async def process_urls(self, urls: List[str], save_transcripts: bool = True) -> List[Transcript]:
+    async def process_urls(self, urls: List[str], save_transcripts: bool = True,
+                          build_knowledge_base: bool = True) -> List[Transcript]:
         """处理 URL 列表的完整流程"""
         self.logger.info(f"Starting processing of {len(urls)} URLs")
         
@@ -115,9 +137,14 @@ class BiliCortexProcessor:
                 self.logger.info("Step 3: Saving transcripts...")
                 await self._save_transcripts(transcripts)
             
-            # 步骤 4: 清理临时文件
+            # 步骤 4: 构建知识库
+            if build_knowledge_base:
+                self.logger.info("Step 4: Building knowledge base...")
+                await self._build_knowledge_base(transcripts)
+            
+            # 步骤 5: 清理临时文件
             if self.settings.system.cleanup_temp_files:
-                self.logger.info("Step 4: Cleaning up temporary files...")
+                self.logger.info("Step 5: Cleaning up temporary files...")
                 self.extractor.cleanup_temp_files(audio_files)
             
             return transcripts
@@ -153,6 +180,81 @@ class BiliCortexProcessor:
                 self.logger.info(f"Transcript saved: {output_path}")
             except Exception as e:
                 self.logger.error(f"Failed to save transcript {i}: {e}")
+    
+    async def _build_knowledge_base(self, transcripts: List[Transcript]) -> None:
+        """构建向量化知识库"""
+        try:
+            all_chunks = []
+            
+            # 处理每个转录结果
+            for transcript in transcripts:
+                self.logger.info(f"Processing transcript from {transcript.source_audio.file_path}")
+                
+                # 文本处理和分块
+                chunks = self.text_processor.chunk_text(transcript)
+                all_chunks.extend(chunks)
+                
+                self.logger.info(f"Generated {len(chunks)} text chunks")
+            
+            if not all_chunks:
+                self.logger.warning("No text chunks generated")
+                return
+            
+            self.logger.info(f"Total chunks to process: {len(all_chunks)}")
+            
+            # 生成嵌入向量
+            self.logger.info("Generating embedding vectors...")
+            embedding_vectors = self.vectorizer.encode_chunks(all_chunks)
+            
+            if not embedding_vectors:
+                self.logger.error("Failed to generate embedding vectors")
+                return
+            
+            self.logger.info(f"Generated {len(embedding_vectors)} embedding vectors")
+            
+            # 存储到向量数据库
+            self.logger.info("Storing vectors in knowledge base...")
+            self.vector_store.add_embedding_vectors(embedding_vectors)
+            
+            # 获取存储统计信息
+            stats = self.vector_store.get_collection_stats()
+            self.logger.info(f"Knowledge base updated: {stats['document_count']} total documents")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to build knowledge base: {e}")
+            raise
+    
+    def search_knowledge_base(self, query: str, k: int = 5) -> List[SearchResult]:
+        """搜索知识库"""
+        try:
+            self.logger.info(f"Searching knowledge base for: '{query}'")
+            results = self.vector_store.similarity_search(query, k=k)
+            self.logger.info(f"Found {len(results)} results")
+            return results
+        except Exception as e:
+            self.logger.error(f"Failed to search knowledge base: {e}")
+            return []
+    
+    def demo_search(self, query: str = None) -> None:
+        """演示知识库搜索功能"""
+        if not query:
+            query = "视频内容"
+        
+        self.logger.info("=== 知识库搜索演示 ===")
+        results = self.search_knowledge_base(query)
+        
+        if not results:
+            self.logger.info("No results found")
+            return
+        
+        for i, result in enumerate(results, 1):
+            self.logger.info(f"\n--- Result {i} (Score: {result.score:.3f}) ---")
+            self.logger.info(f"Text: {result.text_chunk.text[:200]}...")
+            if result.text_chunk.start_time:
+                self.logger.info(f"Time: {result.text_chunk.start_time:.1f}s - {result.text_chunk.end_time:.1f}s")
+            self.logger.info(f"Source: {result.text_chunk.source_file}")
+            
+        self.logger.info("=== 搜索演示完成 ===")
     
     def process_single_url(self, url: str) -> Optional[Transcript]:
         """处理单个 URL（同步接口）"""
@@ -215,6 +317,24 @@ Examples:
     )
     
     parser.add_argument(
+        '--no-kb',
+        action='store_true',
+        help='不构建向量知识库'
+    )
+    
+    parser.add_argument(
+        '--search', '-s',
+        type=str,
+        help='搜索已构建的知识库'
+    )
+    
+    parser.add_argument(
+        '--search-demo',
+        action='store_true',
+        help='演示知识库搜索功能'
+    )
+    
+    parser.add_argument(
         '--log-level',
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
         default='INFO',
@@ -266,6 +386,26 @@ async def main():
         print(json.dumps(processor.get_system_info(), indent=2, ensure_ascii=False))
         return 0
     
+    # 搜索知识库
+    if args.search:
+        results = processor.search_knowledge_base(args.search)
+        if results:
+            print(f"\n=== 搜索结果：'{args.search}' ===")
+            for i, result in enumerate(results, 1):
+                print(f"\n--- Result {i} (Score: {result.score:.3f}) ---")
+                print(f"Text: {result.text_chunk.text[:300]}...")
+                if result.text_chunk.start_time:
+                    print(f"Time: {result.text_chunk.start_time:.1f}s - {result.text_chunk.end_time:.1f}s")
+                print(f"Source: {result.text_chunk.source_file}")
+        else:
+            print(f"No results found for '{args.search}'")
+        return 0
+    
+    # 搜索演示
+    if args.search_demo:
+        processor.demo_search()
+        return 0
+    
     # 收集 URLs
     urls = []
     
@@ -282,7 +422,11 @@ async def main():
     # 处理 URLs
     try:
         logger.info(f"Starting Bili-Cortex processing with {len(urls)} URLs")
-        transcripts = await processor.process_urls(urls, save_transcripts=not args.no_save)
+        transcripts = await processor.process_urls(
+            urls, 
+            save_transcripts=not args.no_save,
+            build_knowledge_base=not args.no_kb
+        )
         
         if transcripts:
             logger.info(f"✅ Processing completed successfully!")

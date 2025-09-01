@@ -8,6 +8,7 @@ from faster_whisper import WhisperModel
 import torch
 
 from src.models import AudioFile, Transcript, TranscriptSegment
+from src.utils.text_converter import text_converter
 
 
 class WhisperTranscriber:
@@ -16,7 +17,7 @@ class WhisperTranscriber:
     def __init__(
         self,
         model_name: str = "large-v3",
-        language: str = "zh",
+        language: str = "zh-CN",
         device: str = "auto",
         batch_size: int = 8,
         compute_type: str = "float16"
@@ -26,7 +27,7 @@ class WhisperTranscriber:
         
         Args:
             model_name: Whisper 模型名称 (tiny, base, small, medium, large, large-v2, large-v3)
-            language: 音频语言代码 (zh, en, etc.)
+            language: 音频语言代码 (zh-CN: 简体, zh-TW: 繁体, zh: 简体, en, etc.)
             device: 计算设备 (auto, cpu, cuda)
             batch_size: 批处理大小
             compute_type: 计算精度 (float16, float32, int8)
@@ -122,9 +123,11 @@ class WhisperTranscriber:
         
         try:
             # 执行转录
+            # Whisper 只需要语言代码前两位
+            whisper_lang = self.language.split('-')[0] if '-' in self.language else self.language
             segments, info = self.model.transcribe(
                 str(audio_file.file_path),
-                language=self.language,
+                language=whisper_lang,
                 beam_size=5,
                 word_timestamps=True,
                 vad_filter=True,  # 语音活动检测
@@ -139,6 +142,14 @@ class WhisperTranscriber:
             for segment in segments:
                 cleaned_text = self._clean_text(segment.text)
                 if cleaned_text:  # 只保留非空文本
+                    # 根据语言设置进行繁简转换
+                    if self.language == 'zh-CN' or self.language == 'zh':
+                        # 确保输出为简体中文
+                        cleaned_text = text_converter.to_simplified(cleaned_text)
+                    elif self.language == 'zh-TW':
+                        # 确保输出为繁体中文
+                        cleaned_text = text_converter.to_traditional(cleaned_text)
+                    
                     transcript_segments.append(TranscriptSegment(
                         text=cleaned_text,
                         start_time=segment.start,

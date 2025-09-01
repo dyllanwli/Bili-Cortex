@@ -8,7 +8,7 @@ audio:
 
 transcription:
   model: 'medium'          # 模型大小: tiny, base, small, medium, large, large-v2, large-v3
-  language: 'zh'           # 语言代码: zh, en, ja, ko, fr, de, es 等
+  language: 'zh-CN'        # 语言代码: zh-CN(简体), zh-TW(繁体), zh(简体), en, ja, ko 等
   device: 'auto'           # 设备: auto, cpu, cuda
   batch_size: 8            # 批处理大小
   compute_type: 'float32'  # 计算精度: float16, float32, int8

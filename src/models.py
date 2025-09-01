@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pathlib import Path
 
 
@@ -36,3 +36,39 @@ class Transcript:
         """自动生成完整文本"""
         if not self.full_text:
             self.full_text = " ".join(segment.text for segment in self.segments)
+
+
+@dataclass
+class TextChunk:
+    """文本块数据类型"""
+    text: str
+    metadata: Dict[str, Any]
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    source_file: Optional[str] = None
+    chunk_index: Optional[int] = None
+
+
+@dataclass
+class EmbeddingVector:
+    """嵌入向量数据类型"""
+    vector: List[float]
+    text_chunk: TextChunk
+    model_name: str
+    dimension: int
+
+
+@dataclass
+class SearchResult:
+    """搜索结果数据类型"""
+    text_chunk: TextChunk
+    score: float
+    distance: Optional[float] = None
+
+
+@dataclass
+class Collection:
+    """集合数据类型"""
+    name: str
+    description: Optional[str] = None
+    document_count: int = 0
