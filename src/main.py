@@ -46,9 +46,9 @@ class BiliCortexProcessor:
         
         # 初始化组件
         self.extractor = VideoExtractor(
-            temp_dir=self.settings.audio.temp_dir,
-            quality=self.settings.audio.quality,
-            format=self.settings.audio.format
+            temp_dir=self.settings.core.temp_dir,
+            quality=self.settings.core.quality,
+            format=self.settings.core.format
         )
         
         self.transcriber = WhisperTranscriber(
@@ -57,40 +57,36 @@ class BiliCortexProcessor:
         
         # 初始化知识库组件
         self.text_processor = TextProcessor(
-            chunk_size=self.settings.text_processing.chunk_size,
-            chunk_overlap=self.settings.text_processing.chunk_overlap,
-            min_chunk_size=self.settings.text_processing.min_chunk_size
+            chunk_size=self.settings.knowledge_base.chunk_size,
+            chunk_overlap=self.settings.knowledge_base.chunk_overlap
         )
         
         self.vectorizer = EmbeddingVectorizer(
-            model_name=self.settings.vectorization.model,
-            batch_size=self.settings.vectorization.batch_size,
-            max_seq_length=self.settings.vectorization.max_seq_length
+            model_name=self.settings.knowledge_base.embedding_model,
+            device=self.settings.knowledge_base.embedding_device
         )
         
         self.vector_store = VectorStore(
-            db_path=self.settings.storage.db_path,
-            collection_name=self.settings.storage.collection_name
+            db_path=self.settings.knowledge_base.db_path,
+            collection_name=self.settings.knowledge_base.collection_name
         )
         
         self.logger.info("Bili-Cortex processor initialized")
         self.logger.info(f"Configuration: {self.settings.to_dict()}")
     
     def validate_urls(self, urls: List[str]) -> List[str]:
-        """验证 URL 列表"""
+        """简化的 URL 验证"""
+        from config.settings import get_allowed_domains
+        
         valid_urls = []
+        allowed_domains = get_allowed_domains()
+        
         for url in urls:
-            if len(url) > self.settings.security.max_url_length:
-                self.logger.warning(f"URL too long, skipping: {url[:50]}...")
-                continue
-            
-            if self.settings.security.enable_url_validation:
-                # 简单的 URL 格式验证
-                if not any(domain in url.lower() for domain in self.settings.security.allowed_domains):
-                    self.logger.warning(f"Domain not allowed, skipping: {url}")
-                    continue
-            
-            valid_urls.append(url)
+            # 基本的域名检查
+            if any(domain in url.lower() for domain in allowed_domains):
+                valid_urls.append(url)
+            else:
+                self.logger.warning(f"Unsupported domain, skipping: {url}")
         
         return valid_urls
     
@@ -121,9 +117,6 @@ class BiliCortexProcessor:
             
             # 步骤 2: 转录音频
             self.logger.info("Step 2: Transcribing audio files...")
-            estimated_time = self.transcriber.estimate_processing_time(audio_files)
-            self.logger.info(f"Estimated processing time: {estimated_time:.1f} seconds")
-            
             transcripts = self.transcriber.batch_transcribe(audio_files)
             
             if not transcripts:
@@ -143,7 +136,7 @@ class BiliCortexProcessor:
                 await self._build_knowledge_base(transcripts)
             
             # 步骤 5: 清理临时文件
-            if self.settings.system.cleanup_temp_files:
+            if self.settings.core.cleanup_temp_files:
                 self.logger.info("Step 5: Cleaning up temporary files...")
                 self.extractor.cleanup_temp_files(audio_files)
             
@@ -161,7 +154,7 @@ class BiliCortexProcessor:
     
     async def _save_transcripts(self, transcripts: List[Transcript]) -> None:
         """保存转录结果"""
-        transcripts_dir = Path(self.settings.system.transcripts_dir)
+        transcripts_dir = Path(self.settings.core.transcripts_dir)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         for i, transcript in enumerate(transcripts, 1):
@@ -214,7 +207,7 @@ class BiliCortexProcessor:
             
             # 存储到向量数据库
             self.logger.info("Storing vectors in knowledge base...")
-            self.vector_store.add_embedding_vectors(embedding_vectors)
+            self.vector_store.add_items(embedding_vectors)
             
             # 获取存储统计信息
             stats = self.vector_store.get_collection_stats()

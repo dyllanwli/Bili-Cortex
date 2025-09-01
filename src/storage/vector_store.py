@@ -93,15 +93,15 @@ class VectorStore:
             logger.error(f"Failed to create/get collection {name}: {str(e)}")
             raise
     
-    def add_documents(self, chunks: List[TextChunk], collection_name: str = None) -> None:
+    def add_items(self, items, collection_name: str = None) -> None:
         """
-        添加文档到向量存储
+        统一的添加接口 - 支持 TextChunk 和 EmbeddingVector
         
         Args:
-            chunks: 文本块列表
+            items: TextChunk 或 EmbeddingVector 列表
             collection_name: 目标集合名称
         """
-        if not chunks:
+        if not items:
             return
         
         collection_name = collection_name or self.collection_name
@@ -111,115 +111,79 @@ class VectorStore:
             collection_obj = self.create_collection(collection_name)
             chroma_collection = self._collections_cache[collection_name]
             
-            logger.info(f"Adding {len(chunks)} documents to collection {collection_name}")
+            logger.info(f"Adding {len(items)} items to collection {collection_name}")
             
-            # 分批处理文档
-            batch_size = 100  # ChromaDB 推荐的批处理大小
-            
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i:i + batch_size]
-                
-                # 准备批处理数据
-                ids = []
-                texts = []
-                metadatas = []
-                
-                for chunk in batch:
-                    # 生成唯一ID
-                    doc_id = str(uuid.uuid4())
-                    ids.append(doc_id)
-                    texts.append(chunk.text)
-                    
-                    # 准备元数据
-                    metadata = dict(chunk.metadata)
-                    metadata.update({
-                        'start_time': chunk.start_time or 0.0,
-                        'end_time': chunk.end_time or 0.0,
-                        'source_file': chunk.source_file or '',
-                        'chunk_index': chunk.chunk_index or 0
-                    })
-                    metadatas.append(metadata)
-                
-                # 添加到集合（ChromaDB 会自动生成嵌入向量）
-                chroma_collection.add(
-                    ids=ids,
-                    documents=texts,
-                    metadatas=metadatas
-                )
-                
-                logger.info(f"Added batch {i//batch_size + 1}/{(len(chunks) + batch_size - 1)//batch_size}")
-            
-            logger.info(f"Successfully added {len(chunks)} documents to {collection_name}")
-            
-        except Exception as e:
-            logger.error(f"Failed to add documents to collection {collection_name}: {str(e)}")
-            raise
-    
-    def add_embedding_vectors(self, embedding_vectors: List[EmbeddingVector], 
-                             collection_name: str = None) -> None:
-        """
-        添加预计算的嵌入向量到存储
-        
-        Args:
-            embedding_vectors: 嵌入向量列表
-            collection_name: 目标集合名称
-        """
-        if not embedding_vectors:
-            return
-        
-        collection_name = collection_name or self.collection_name
-        
-        try:
-            # 确保集合存在
-            collection_obj = self.create_collection(collection_name)
-            chroma_collection = self._collections_cache[collection_name]
-            
-            logger.info(f"Adding {len(embedding_vectors)} embedding vectors to collection {collection_name}")
-            
-            # 分批处理
+            # 统一的批处理逻辑
             batch_size = 100
             
-            for i in range(0, len(embedding_vectors), batch_size):
-                batch = embedding_vectors[i:i + batch_size]
+            for i in range(0, len(items), batch_size):
+                batch = items[i:i + batch_size]
                 
                 ids = []
-                embeddings = []
                 texts = []
                 metadatas = []
+                embeddings = []
                 
-                for emb_vec in batch:
+                for item in batch:
                     doc_id = str(uuid.uuid4())
                     ids.append(doc_id)
-                    embeddings.append(emb_vec.vector)
-                    texts.append(emb_vec.text_chunk.text)
                     
-                    # 准备元数据
-                    metadata = dict(emb_vec.text_chunk.metadata)
-                    metadata.update({
-                        'start_time': emb_vec.text_chunk.start_time or 0.0,
-                        'end_time': emb_vec.text_chunk.end_time or 0.0,
-                        'source_file': emb_vec.text_chunk.source_file or '',
-                        'chunk_index': emb_vec.text_chunk.chunk_index or 0,
-                        'model_name': emb_vec.model_name,
-                        'dimension': emb_vec.dimension
-                    })
+                    # 判断类型并处理
+                    from ..models import TextChunk, EmbeddingVector
+                    
+                    if isinstance(item, EmbeddingVector):
+                        # EmbeddingVector 处理
+                        texts.append(item.text_chunk.text)
+                        embeddings.append(item.vector)
+                        metadata = dict(item.text_chunk.metadata)
+                        metadata.update({
+                            'start_time': item.text_chunk.start_time or 0.0,
+                            'end_time': item.text_chunk.end_time or 0.0,
+                            'source_file': item.text_chunk.source_file or '',
+                            'chunk_index': item.text_chunk.chunk_index or 0,
+                            'model_name': item.model_name,
+                            'dimension': item.dimension
+                        })
+                    else:
+                        # TextChunk 处理
+                        texts.append(item.text)
+                        metadata = dict(item.metadata)
+                        metadata.update({
+                            'start_time': item.start_time or 0.0,
+                            'end_time': item.end_time or 0.0,
+                            'source_file': item.source_file or '',
+                            'chunk_index': item.chunk_index or 0
+                        })
+                    
                     metadatas.append(metadata)
                 
                 # 添加到集合
-                chroma_collection.add(
-                    ids=ids,
-                    embeddings=embeddings,
-                    documents=texts,
-                    metadatas=metadatas
-                )
+                add_kwargs = {
+                    'ids': ids,
+                    'documents': texts,
+                    'metadatas': metadatas
+                }
+                if embeddings:  # 如果有嵌入向量，添加它们
+                    add_kwargs['embeddings'] = embeddings
                 
-                logger.info(f"Added embedding batch {i//batch_size + 1}/{(len(embedding_vectors) + batch_size - 1)//batch_size}")
+                chroma_collection.add(**add_kwargs)
+                
+                logger.info(f"Added batch {i//batch_size + 1}/{(len(items) + batch_size - 1)//batch_size}")
             
-            logger.info(f"Successfully added {len(embedding_vectors)} embedding vectors to {collection_name}")
+            logger.info(f"Successfully added {len(items)} items to {collection_name}")
             
         except Exception as e:
-            logger.error(f"Failed to add embedding vectors to collection {collection_name}: {str(e)}")
+            logger.error(f"Failed to add items to collection {collection_name}: {str(e)}")
             raise
+    
+    # 保留兼容性方法
+    def add_documents(self, chunks, collection_name: str = None) -> None:
+        """兼容性方法 - 使用统一接口"""
+        self.add_items(chunks, collection_name)
+    
+    def add_embedding_vectors(self, embedding_vectors, collection_name: str = None) -> None:
+        """兼容性方法 - 使用统一接口"""
+        self.add_items(embedding_vectors, collection_name)
     
     def similarity_search(self, query: str, k: int = 5, 
                          collection_name: str = None) -> List[SearchResult]:

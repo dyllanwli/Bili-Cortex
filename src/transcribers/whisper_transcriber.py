@@ -19,7 +19,6 @@ class WhisperTranscriber:
         model_name: str = "large-v3",
         language: str = "zh-CN",
         device: str = "auto",
-        batch_size: int = 8,
         compute_type: str = "float16"
     ):
         """
@@ -29,12 +28,10 @@ class WhisperTranscriber:
             model_name: Whisper 模型名称 (tiny, base, small, medium, large, large-v2, large-v3)
             language: 音频语言代码 (zh-CN: 简体, zh-TW: 繁体, zh: 简体, en, etc.)
             device: 计算设备 (auto, cpu, cuda)
-            batch_size: 批处理大小
             compute_type: 计算精度 (float16, float32, int8)
         """
         self.model_name = model_name
         self.language = language
-        self.batch_size = batch_size
         self.compute_type = compute_type
         self.logger = logging.getLogger(__name__)
         
@@ -44,13 +41,10 @@ class WhisperTranscriber:
         # 初始化模型
         self.model = self._initialize_model()
         
-        # 文本清洗正则表达式
+        # 简化的文本清洗模式
         self.text_patterns = [
             (r'\s+', ' '),  # 多个空白字符合并为一个空格
-            (r'^[\s\n\r]*', ''),  # 去除开头空白
-            (r'[\s\n\r]*$', ''),  # 去除结尾空白
-            (r'[。]{2,}', '。'),  # 多个句号合并
-            (r'[，]{2,}', '，'),  # 多个逗号合并
+            (r'[。，]{2,}', lambda m: m.group(0)[0]),  # 重复标点合并
         ]
     
     def _setup_device(self, device: str) -> str:
@@ -83,11 +77,6 @@ class WhisperTranscriber:
             
         except Exception as e:
             self.logger.error(f"Failed to load Whisper model: {e}")
-            # 降级到更小的模型
-            if self.model_name == "large-v3":
-                self.logger.info("Attempting to fallback to medium model")
-                self.model_name = "medium"
-                return self._initialize_model()
             raise
     
     def _clean_text(self, text: str) -> str:
@@ -95,11 +84,11 @@ class WhisperTranscriber:
         if not text:
             return ""
         
-        cleaned = text
+        cleaned = text.strip()
         for pattern, replacement in self.text_patterns:
             cleaned = re.sub(pattern, replacement, cleaned)
         
-        return cleaned.strip()
+        return cleaned
     
     def _validate_audio_file(self, audio_file: AudioFile) -> bool:
         """验证音频文件"""
@@ -201,18 +190,15 @@ class WhisperTranscriber:
         transcripts = []
         failed_count = 0
         
-        # 批处理转录
-        for i in range(0, len(valid_files), self.batch_size):
-            batch = valid_files[i:i + self.batch_size]
-            self.logger.info(f"Processing batch {i // self.batch_size + 1}: files {i+1}-{min(i + len(batch), len(valid_files))}")
-            
-            for audio_file in batch:
-                try:
-                    transcript = self.transcribe(audio_file)
-                    transcripts.append(transcript)
-                except Exception as e:
-                    self.logger.error(f"Failed to transcribe {audio_file.file_path}: {e}")
-                    failed_count += 1
+        # 简化的批处理 - 顺序处理
+        for i, audio_file in enumerate(valid_files, 1):
+            try:
+                self.logger.info(f"Processing file {i}/{len(valid_files)}: {audio_file.file_path}")
+                transcript = self.transcribe(audio_file)
+                transcripts.append(transcript)
+            except Exception as e:
+                self.logger.error(f"Failed to transcribe {audio_file.file_path}: {e}")
+                failed_count += 1
         
         self.logger.info(
             f"Batch transcription completed. "
@@ -227,23 +213,8 @@ class WhisperTranscriber:
             "model_name": self.model_name,
             "language": self.language,
             "device": self.device,
-            "compute_type": self.compute_type,
-            "batch_size": self.batch_size
+            "compute_type": self.compute_type
         }
-    
-    def estimate_processing_time(self, audio_files: List[AudioFile]) -> float:
-        """估算处理时间（基于音频时长）"""
-        total_duration = 0.0
-        
-        for audio_file in audio_files:
-            if audio_file.duration:
-                total_duration += audio_file.duration
-        
-        # 估算：通常转录时间约为音频时长的 0.1-0.3 倍（取决于硬件）
-        multiplier = 0.1 if self.device == "cuda" else 0.3
-        estimated_time = total_duration * multiplier
-        
-        return estimated_time
     
     def save_transcript(self, transcript: Transcript, output_path: Path) -> None:
         """保存转录结果到文件"""
@@ -251,21 +222,22 @@ class WhisperTranscriber:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             
             with open(output_path, 'w', encoding='utf-8') as f:
-                # 写入元数据
+                # 简化的元数据
                 f.write(f"# 转录结果\n")
                 f.write(f"语言: {transcript.language}\n")
-                f.write(f"处理时间: {transcript.processing_time:.2f}秒\n")
-                f.write(f"来源: {transcript.source_audio.source_url}\n\n")
+                if transcript.source_audio.source_url:
+                    f.write(f"来源: {transcript.source_audio.source_url}\n")
+                f.write("\n")
                 
-                # 写入完整文本
+                # 完整文本
                 f.write("## 完整文本\n")
                 f.write(f"{transcript.full_text}\n\n")
                 
-                # 写入时间戳段落
+                # 时间戳段落
                 f.write("## 时间戳段落\n")
                 for i, segment in enumerate(transcript.segments, 1):
                     f.write(
-                        f"{i:3d}. [{segment.start_time:6.1f}s - {segment.end_time:6.1f}s] "
+                        f"{i:3d}. [{segment.start_time:.1f}s - {segment.end_time:.1f}s] "
                         f"{segment.text}\n"
                     )
             

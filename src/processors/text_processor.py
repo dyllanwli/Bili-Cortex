@@ -8,18 +8,17 @@ from ..models import TextChunk, TranscriptSegment, Transcript
 class TextProcessor:
     """文本处理器，负责清洗和分块处理转录文本"""
     
-    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200, min_chunk_size: int = 100):
+    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
         """
         初始化文本处理器
         
         Args:
             chunk_size: 文本块大小
             chunk_overlap: 文本块重叠大小
-            min_chunk_size: 最小文本块大小
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.min_chunk_size = min_chunk_size
+        self.min_chunk_size = max(100, chunk_size // 10)  # 自动计算最小块大小
         
         # 配置 LangChain 文本分割器
         self.text_splitter = RecursiveCharacterTextSplitter(

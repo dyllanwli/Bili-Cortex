@@ -63,36 +63,27 @@ class VideoExtractor:
                 self.logger.error(f"Failed to extract info from {url}: {e}")
                 raise
     
-    async def _download_with_retry(self, url: str, max_retries: int = 3) -> Optional[Path]:
-        """带重试机制的下载，使用指数退避"""
-        for attempt in range(max_retries):
-            try:
-                # 使用临时文件名避免冲突
-                temp_opts = self.ydl_opts.copy()
-                temp_opts['outtmpl'] = str(self.temp_dir / f'temp_{int(time.time())}_{attempt}.%(ext)s')
-                
-                with yt_dlp.YoutubeDL(temp_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    if info:
-                        # 查找下载的文件
-                        expected_path = Path(ydl.prepare_filename(info))
-                        if expected_path.exists():
-                            return expected_path
-                        
-                        # 如果预期路径不存在，在临时目录中查找最新文件
-                        audio_files = list(self.temp_dir.glob(f'temp_{int(time.time())}_{attempt}.*'))
-                        if audio_files:
-                            return max(audio_files, key=lambda p: p.stat().st_mtime)
-                            
-            except Exception as e:
-                self.logger.warning(f"Download attempt {attempt + 1} failed for {url}: {e}")
-                if attempt < max_retries - 1:
-                    # 指数退避
-                    wait_time = (2 ** attempt) + (attempt * 0.1)
-                    await asyncio.sleep(wait_time)
-                else:
-                    self.logger.error(f"All download attempts failed for {url}")
-                    raise
+    async def _download_audio(self, url: str) -> Optional[Path]:
+        """简化的音频下载"""
+        try:
+            # 使用当前时间戳作为文件名前缀
+            temp_opts = self.ydl_opts.copy()
+            temp_opts['outtmpl'] = str(self.temp_dir / f'audio_{int(time.time())}.%(ext)s')
+            
+            with yt_dlp.YoutubeDL(temp_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if info:
+                    expected_path = Path(ydl.prepare_filename(info))
+                    if expected_path.exists():
+                        return expected_path
+                    
+                    # 在临时目录中查找最新文件
+                    audio_files = list(self.temp_dir.glob('audio_*.*'))
+                    if audio_files:
+                        return max(audio_files, key=lambda p: p.stat().st_mtime)
+        except Exception as e:
+            self.logger.error(f"Failed to download audio from {url}: {e}")
+            raise
         
         return None
     
@@ -107,16 +98,17 @@ class VideoExtractor:
             # 获取视频信息
             info = self._get_video_info(url)
             
-            # 下载音频
-            loop = asyncio.get_event_loop() if asyncio.get_event_loop().is_running() else asyncio.new_event_loop()
-            if loop.is_running():
-                # 如果在异步环境中，创建新的事件循环
+            # 简化的下载逻辑
+            try:
+                loop = asyncio.get_running_loop()
+                # 在已有的事件循环中
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self._download_with_retry(url))
+                    future = executor.submit(asyncio.run, self._download_audio(url))
                     audio_path = future.result()
-            else:
-                audio_path = asyncio.run(self._download_with_retry(url))
+            except RuntimeError:
+                # 没有运行中的事件循环
+                audio_path = asyncio.run(self._download_audio(url))
             
             if not audio_path or not audio_path.exists():
                 raise RuntimeError(f"Failed to download audio from {url}")
@@ -137,43 +129,35 @@ class VideoExtractor:
             raise
     
     async def batch_extract(self, urls: List[str]) -> List[AudioFile]:
-        """批量异步提取音频"""
+        """简化的批量提取音频"""
         self.logger.info(f"Starting batch extraction of {len(urls)} URLs")
         
         # 验证所有 URLs
         valid_urls = [url for url in urls if self._validate_url(url)]
-        invalid_urls = [url for url in urls if not self._validate_url(url)]
+        invalid_count = len(urls) - len(valid_urls)
         
-        if invalid_urls:
-            self.logger.warning(f"Skipping {len(invalid_urls)} invalid URLs: {invalid_urls}")
+        if invalid_count > 0:
+            self.logger.warning(f"Skipping {invalid_count} invalid URLs")
         
         if not valid_urls:
             return []
         
-        # 并发下载
-        semaphore = asyncio.Semaphore(3)  # 限制并发数
-        
-        async def extract_single(url: str) -> Optional[AudioFile]:
-            async with semaphore:
-                try:
-                    return self.extract_audio(url)
-                except Exception as e:
-                    self.logger.error(f"Failed to extract audio from {url}: {e}")
-                    return None
-        
-        # 执行并发下载
-        tasks = [extract_single(url) for url in valid_urls]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 过滤成功的结果
+        # 简化的序列处理 - 减少复杂性
         audio_files = []
-        for result in results:
-            if isinstance(result, AudioFile):
-                audio_files.append(result)
-            elif isinstance(result, Exception):
-                self.logger.error(f"Exception in batch extraction: {result}")
+        failed_count = 0
         
-        self.logger.info(f"Successfully extracted {len(audio_files)} audio files")
+        for i, url in enumerate(valid_urls, 1):
+            try:
+                self.logger.info(f"Processing URL {i}/{len(valid_urls)}: {url}")
+                audio_file = self.extract_audio(url)
+                audio_files.append(audio_file)
+            except Exception as e:
+                self.logger.error(f"Failed to extract audio from {url}: {e}")
+                failed_count += 1
+        
+        self.logger.info(
+            f"Batch extraction completed. Success: {len(audio_files)}, Failed: {failed_count}"
+        )
         return audio_files
     
     def cleanup_temp_files(self, audio_files: List[AudioFile]) -> None:
@@ -189,8 +173,8 @@ class VideoExtractor:
     def __del__(self):
         """析构函数，清理临时文件"""
         try:
-            # 清理所有临时文件
-            for temp_file in self.temp_dir.glob("temp_*.*"):
+            # 清理音频临时文件
+            for temp_file in self.temp_dir.glob("audio_*.*"):
                 temp_file.unlink()
         except Exception:
             pass  # 忽略清理错误
