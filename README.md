@@ -76,17 +76,9 @@ export WHISPER_LANGUAGE="zh-TW"
 # 配置文件：language: 'zh-TW'
 ```
 
-### 手动繁简转换
-```bash
-# 繁体转简体
-python tools/convert_text.py --to-simplified input.md output.md
-
-# 简体转繁体  
-python tools/convert_text.py --to-traditional input.md output.md
-
-# 批量转换
-python tools/convert_text.py --to-simplified data/transcripts/ converted/
-```
+### 注意
+- 系统会根据语言设置自动进行繁简转换
+- 无需手动后处理，转录结果已经是目标格式
 
 ## 输出文件
 
