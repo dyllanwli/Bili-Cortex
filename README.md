@@ -1,8 +1,8 @@
 # Bili-Cortex
 
-🎥 智能 Bilibili 视频分析与知识提取系统
+🎥 智能视频分析与知识提取系统
 
-将 B站视频自动转换为高质量的中文转录文本，并构建可搜索的知识库，支持语义搜索和内容分析。
+支持 **Bilibili** 和 **YouTube** 视频自动转换为高质量的中文转录文本，并构建可搜索的知识库，支持语义搜索和内容分析。
 
 ## ✨ 核心特性
 
@@ -25,11 +25,14 @@
 ### 2. 基础转录
 
 ```bash
-# 转录单个视频
+# 转录单个Bilibili视频
 ./bili-cortex.sh https://www.bilibili.com/video/BV1234567890
 
-# 转录多个视频
-./bili-cortex.sh url1 url2 url3
+# 转录单个YouTube视频
+./bili-cortex.sh https://www.youtube.com/watch?v=example123
+
+# 转录多个视频（混合平台）
+./bili-cortex.sh bilibili_url youtube_url
 
 # 从文件批量转录
 ./bili-cortex.sh --from-file urls.txt
@@ -50,12 +53,18 @@
 
 ### 4. 批量处理文件格式
 
-创建 `urls.txt` 文件，每行一个 URL：
+创建 `urls.txt` 文件，每行一个 URL（支持混合平台）：
 ```
+# Bilibili URLs
 https://www.bilibili.com/video/BV1234567890
 https://www.bilibili.com/video/BV1234567891
-# 这是注释行，会被忽略
 https://b23.tv/abc123
+
+# YouTube URLs
+https://www.youtube.com/watch?v=example123
+https://youtu.be/shortExample
+
+# 注释行会被忽略
 ```
 
 ## 📋 命令选项
@@ -133,10 +142,17 @@ data/transcripts/transcript_20250901_143022_a1b2c3d4.md
 
 ## 🌐 支持平台
 
+### Bilibili 支持
 - ✅ **bilibili.com** - 标准桌面版
 - ✅ **www.bilibili.com** - WWW子域名  
 - ✅ **b23.tv** - 短链接格式
 - ✅ **m.bilibili.com** - 移动版链接
+
+### YouTube 支持
+- ✅ **youtube.com** - 标准桌面版
+- ✅ **www.youtube.com** - WWW子域名
+- ✅ **youtu.be** - 短链接格式
+- ✅ **m.youtube.com** - 移动版链接
 
 ## 💻 系统要求
 

@@ -18,7 +18,11 @@ class VideoExtractor:
         'bilibili.com',
         'www.bilibili.com',
         'b23.tv',
-        'm.bilibili.com'
+        'm.bilibili.com',
+        'youtube.com',
+        'www.youtube.com',
+        'youtu.be',
+        'm.youtube.com'
     ]
     
     def __init__(self, temp_dir: str = "./data/temp", quality: str = "best", format: str = "wav"):
