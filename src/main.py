@@ -86,6 +86,11 @@ class BiliCortexProcessor:
             'space.bilibili.com/'
         ]
         return any(pattern in url.lower() for pattern in channel_patterns)
+
+    def is_playlist_url(self, url: str) -> bool:
+        """检测是否为 YouTube 播放列表URL"""
+        u = url.lower()
+        return ('list=' in u) or ('/playlist?' in u)
     
     def extract_channel_videos(self, channel_url: str, limit: int = 10) -> List[str]:
         """从频道提取视频URLs (简化版)
@@ -136,6 +141,50 @@ class BiliCortexProcessor:
         except Exception as e:
             self.logger.error(f"Failed to extract channel videos: {e}")
             return []
+
+    def extract_playlist_videos(self, playlist_url: str, limit: int = 0) -> List[str]:
+        """从播放列表提取视频URLs；limit<=0 表示全部
+
+        支持两种形式：
+        - https://www.youtube.com/playlist?list=XXXX
+        - https://www.youtube.com/watch?v=XXXX&list=YYYY （会重写为 playlist 链接）
+        """
+        try:
+            self.logger.info(
+                f"Extracting videos from playlist: {playlist_url} (limit: {'ALL' if limit and limit <= 0 else limit or 'ALL'})"
+            )
+            # 规范化为 /playlist?list= 格式
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(playlist_url)
+            qs = parse_qs(parsed.query)
+            list_id = None
+            if 'list' in qs and qs['list']:
+                list_id = qs['list'][0]
+            if list_id:
+                normalized_url = f"https://www.youtube.com/playlist?list={list_id}"
+            else:
+                normalized_url = playlist_url
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': True,
+            }
+            if limit and limit > 0:
+                ydl_opts['playlistend'] = limit
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(normalized_url, download=False)
+                entries = info.get('entries', []) if info else []
+                video_urls = []
+                for entry in entries:
+                    if entry and (not limit or limit <= 0 or len(video_urls) < limit):
+                        vid = entry.get('id')
+                        if vid:
+                            video_urls.append(f"https://www.youtube.com/watch?v={vid}")
+                self.logger.info(f"Extracted {len(video_urls)} video URLs from playlist")
+                return video_urls
+        except Exception as e:
+            self.logger.error(f"Failed to extract playlist videos: {e}")
+            return []
     
     def validate_urls(self, urls: List[str], channel_limit: int = 10) -> List[str]:
         """简化的 URL 验证，支持频道扩展"""
@@ -154,8 +203,16 @@ class BiliCortexProcessor:
         for url in urls:
             # 基本的域名检查
             if any(domain in url.lower() for domain in allowed_domains):
+                # 播放列表优先展开
+                if self.is_playlist_url(url):
+                    self.logger.info(f"Playlist URL detected: {url}")
+                    pl_videos = self.extract_playlist_videos(url, channel_limit)
+                    if pl_videos:
+                        valid_urls.extend(pl_videos)
+                    else:
+                        self.logger.warning(f"No videos extracted from playlist: {url}")
                 # 检查是否为频道URL
-                if self.is_channel_url(url):
+                elif self.is_channel_url(url):
                     self.logger.info(f"Channel URL detected: {url}")
                     channel_videos = self.extract_channel_videos(url, channel_limit)
                     if channel_videos:
@@ -424,7 +481,7 @@ Examples:
         '--channel-limit',
         type=int,
         default=10,
-        help='频道视频数量限制，0 表示全部 (default: 10)'
+        help='频道/播放列表视频数量限制，0 表示全部 (default: 10)'
     )
 
     parser.add_argument(
