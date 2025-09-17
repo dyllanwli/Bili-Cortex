@@ -20,6 +20,7 @@ from src.processors.text_processor import TextProcessor
 from src.vectorizers.embedding_vectorizer import EmbeddingVectorizer
 from src.storage.vector_store import VectorStore
 from src.models import AudioFile, Transcript, TextChunk, SearchResult
+from src.utils.transcript_loader import load_transcripts_from_dir
 
 
 def setup_logging(log_level: str = "INFO") -> None:
@@ -87,9 +88,14 @@ class BiliCortexProcessor:
         return any(pattern in url.lower() for pattern in channel_patterns)
     
     def extract_channel_videos(self, channel_url: str, limit: int = 10) -> List[str]:
-        """从频道提取视频URLs (简化版)"""
+        """从频道提取视频URLs (简化版)
+
+        当 limit <= 0 时，提取频道下的全部可见视频。
+        """
         try:
-            self.logger.info(f"Extracting videos from channel: {channel_url} (limit: {limit})")
+            self.logger.info(
+                f"Extracting videos from channel: {channel_url} (limit: {'ALL' if limit and limit <= 0 else limit})"
+            )
             
             # 使用频道视频列表URL
             if '/channel/' in channel_url:
@@ -103,8 +109,10 @@ class BiliCortexProcessor:
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': True,  # 只获取URL，不下载
-                'playlistend': limit,  # 限制视频数量
             }
+            # limit <= 0 表示提取全部
+            if limit and limit > 0:
+                ydl_opts['playlistend'] = limit
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(videos_url, download=False)
@@ -115,7 +123,7 @@ class BiliCortexProcessor:
                 
                 video_urls = []
                 for entry in info['entries']:
-                    if entry and len(video_urls) < limit:
+                    if entry and (not limit or limit <= 0 or len(video_urls) < limit):
                         video_id = entry.get('id')
                         # 确保获取的是正确的视频ID
                         if video_id and video_id != channel_url.split('/')[-1]:
@@ -416,7 +424,19 @@ Examples:
         '--channel-limit',
         type=int,
         default=10,
-        help='频道视频数量限制 (default: 10)'
+        help='频道视频数量限制，0 表示全部 (default: 10)'
+    )
+
+    parser.add_argument(
+        '--index-transcripts',
+        action='store_true',
+        help='从已保存的转录文件构建知识库（不重新转录）'
+    )
+
+    parser.add_argument(
+        '--transcripts-dir',
+        default=None,
+        help='指定转录文件目录，未指定则使用配置中的 transcripts_dir'
     )
     
     return parser.parse_args()
@@ -477,6 +497,26 @@ async def main():
     if args.search_demo:
         processor.demo_search()
         return 0
+
+    # 仅从现有转录文件构建知识库
+    if args.index_transcripts:
+        transcripts_dir = Path(args.transcripts_dir) if args.transcripts_dir else Path(processor.settings.core.transcripts_dir)
+        if not transcripts_dir.exists():
+            logger.error(f"Transcripts directory not found: {transcripts_dir}")
+            return 1
+        logger.info(f"Loading transcripts from: {transcripts_dir}")
+        transcripts = load_transcripts_from_dir(transcripts_dir)
+        if not transcripts:
+            logger.error("No transcripts loaded from directory")
+            return 1
+        logger.info(f"Loaded {len(transcripts)} transcripts, building knowledge base...")
+        try:
+            await processor._build_knowledge_base(transcripts)
+            logger.info("✅ Knowledge base built from transcripts")
+            return 0
+        except Exception as e:
+            logger.error(f"Failed to build KB from transcripts: {e}")
+            return 1
     
     # 收集 URLs
     urls = []
